@@ -54,6 +54,9 @@ public class MainWindow {
     // Musterbeispiel, das im Dialog angezeigt wird
     private static final String PATTERN_EXAMPLE = "pattern1,pattern2";
     
+    // FilterManager für die Filterverwaltung
+    private FilterManager filterManager;
+    
     public MainWindow(Shell shell) {
         // Initialisiere Logger-Konfiguration
         initializeLogger();
@@ -61,6 +64,7 @@ public class MainWindow {
         this.shell = shell;
         this.configScanner = new ConfigScanner();
         this.configFileViewer = new ConfigFileViewer();
+        this.filterManager = new FilterManager();
         logger.info("ConfigMaster gestartet");
     }
     
@@ -142,6 +146,74 @@ public class MainWindow {
         
         // Trennlinie im Menü
         new MenuItem(configMenu, SWT.SEPARATOR);
+        
+        // Menüpunkt "Filterverwaltung" erstellen
+        MenuItem filterManagerItem = new MenuItem(configMenu, SWT.PUSH);
+        filterManagerItem.setText("Filterverwaltung...");
+        filterManagerItem.addSelectionListener(new SelectionAdapter() {
+            @Override
+            public void widgetSelected(SelectionEvent e) {
+                openFilterManager();
+            }
+        });
+        
+        // Menüpunkt "Filter" erstellen
+        MenuItem filterMenuItem = new MenuItem(menuBar, SWT.CASCADE);
+        filterMenuItem.setText("Filter");
+        
+        // Untermenü für "Filter" erstellen
+        Menu filterMenu = new Menu(shell, SWT.DROP_DOWN);
+        filterMenuItem.setMenu(filterMenu);
+        
+        // Menüpunkte für die Filter dynamisch erstellen
+        updateFilterMenu(filterMenu);
+    }
+    
+    /**
+     * Aktualisiert das Filter-Menü mit allen verfügbaren Filtern.
+     * 
+     * @param filterMenu Das Filter-Menü
+     */
+    private void updateFilterMenu(Menu filterMenu) {
+        // Bestehende Menüpunkte entfernen
+        for (MenuItem item : filterMenu.getItems()) {
+            item.dispose();
+        }
+        
+        // Filtern hinzufügen
+        for (Filter filter : filterManager.getFilters()) {
+            MenuItem filterItem = new MenuItem(filterMenu, SWT.PUSH);
+            filterItem.setText(filter.getName());
+            
+            // Event-Handler für den Filter
+            filterItem.addSelectionListener(new SelectionAdapter() {
+                @Override
+                public void widgetSelected(SelectionEvent e) {
+                    // Filter anwenden
+                    searchPattern = filter.getKeywordsAsString();
+                    saveConfig();
+                    
+                    // Meldung anzeigen
+                    MessageBox messageBox = new MessageBox(shell, SWT.ICON_INFORMATION);
+                    messageBox.setText("Filter angewendet");
+                    messageBox.setMessage("Der Filter '" + filter.getName() + "' wurde angewendet.\n" +
+                                        "Schlüsselwörter: " + searchPattern);
+                    messageBox.open();
+                }
+            });
+        }
+    }
+    
+    /**
+     * Öffnet den Dialog zur Filterverwaltung.
+     */
+    private void openFilterManager() {
+        FilterDialog filterDialog = new FilterDialog(shell, filterManager);
+        filterDialog.open();
+        
+        // Filter-Menü aktualisieren, nachdem der Dialog geschlossen wurde
+        Menu filterMenu = shell.getMenuBar().getItems()[1].getMenu();
+        updateFilterMenu(filterMenu);
     }
     
     /**
