@@ -18,8 +18,9 @@ import org.eclipse.swt.layout.GridData;
 import org.eclipse.swt.layout.GridLayout;
 import org.eclipse.swt.widgets.Button;
 import org.eclipse.swt.widgets.DirectoryDialog;
-import org.eclipse.swt.widgets.Group;
 import org.eclipse.swt.widgets.Label;
+import org.eclipse.swt.widgets.Menu;
+import org.eclipse.swt.widgets.MenuItem;
 import org.eclipse.swt.widgets.MessageBox;
 import org.eclipse.swt.widgets.Shell;
 import org.eclipse.swt.widgets.Table;
@@ -29,7 +30,7 @@ import org.eclipse.swt.widgets.Text;
 
 /**
  * Hauptfenster der ConfigMaster-Anwendung.
- * Enthält das Konfigurationsmenü und die Tabelle zur Anzeige der gefundenen Konfigurationsdateien.
+ * Enthält die Menüleiste, Konfigurationsoptionen und die Tabelle zur Anzeige der gefundenen Konfigurationsdateien.
  */
 public class MainWindow {
     
@@ -42,10 +43,16 @@ public class MainWindow {
     private static Logger logger;
     
     private Shell shell;
-    private Text searchPathText;
     private Table configFilesTable;
     private ConfigScanner configScanner;
     private ConfigFileViewer configFileViewer;
+    
+    // Gespeicherte Konfigurationswerte
+    private String searchPath = "";
+    private String searchPattern = "default";
+    
+    // Musterbeispiel, das im Dialog angezeigt wird
+    private static final String PATTERN_EXAMPLE = "pattern1,pattern2";
     
     public MainWindow(Shell shell) {
         // Initialisiere Logger-Konfiguration
@@ -85,126 +92,137 @@ public class MainWindow {
         layout.verticalSpacing = 10;
         shell.setLayout(layout);
         
-        // Konfigurationsmenü erstellen
-        createConfigMenu();
+        // Menüleiste erstellen
+        createMenuBar();
         
         // Tabelle für die Konfigurationsdateien erstellen
         createConfigFilesTable();
         
-        // Gespeicherten Suchpfad laden
-        loadSavedSearchPath();
+        // "ReadConfigs" Button unter der Tabelle erstellen
+        createReadConfigsButton();
+        
+        // Gespeicherte Konfiguration laden
+        loadSavedConfig();
     }
     
     /**
-     * Lädt den gespeicherten Suchpfad aus der Konfigurationsdatei und zeigt ihn im Textfeld an.
+     * Erstellt die Menüleiste mit dem Konfigurationsmenü.
      */
-    private void loadSavedSearchPath() {
-        String configFilePath = ROOT_PATH + File.separator + CONFIG_DIR + File.separator + CONFIG_FILE;
-        File configFile = new File(configFilePath);
+    private void createMenuBar() {
+        Menu menuBar = new Menu(shell, SWT.BAR);
+        shell.setMenuBar(menuBar);
         
-        // Prüfen, ob die Konfigurationsdatei existiert
-        if (!configFile.exists()) {
-            // Verzeichnis und leere Konfigurationsdatei erstellen, wenn sie nicht existieren
-            File configDir = new File(ROOT_PATH + File.separator + CONFIG_DIR);
-            if (!configDir.exists()) {
-                configDir.mkdirs();
-            }
-            try {
-                configFile.createNewFile();
-            } catch (IOException e) {
-                logger.error("Fehler beim Erstellen der Konfigurationsdatei: {}", e.getMessage());
-            }
-            return;
-        }
+        // Menüpunkt "Konfiguration" erstellen
+        MenuItem configMenuItem = new MenuItem(menuBar, SWT.CASCADE);
+        configMenuItem.setText("Konfiguration");
         
-        // Konfigurationsdatei lesen
-        try (BufferedReader reader = new BufferedReader(new FileReader(configFile))) {
-            String searchPath = reader.readLine();
-            if (searchPath != null && !searchPath.isEmpty()) {
-                searchPathText.setText(searchPath);
-                logger.info("Suchpfad geladen: {}", searchPath);
-            }
-        } catch (IOException e) {
-            logger.error("Fehler beim Lesen der Konfigurationsdatei: {}", e.getMessage());
-        }
-    }
-    
-    /**
-     * Speichert den Suchpfad in der Konfigurationsdatei.
-     * 
-     * @param searchPath Der zu speichernde Suchpfad
-     */
-    private void saveSearchPath(String searchPath) {
-        String configFilePath = ROOT_PATH + File.separator + CONFIG_DIR + File.separator + CONFIG_FILE;
-        File configFile = new File(configFilePath);
+        // Untermenü für "Konfiguration" erstellen
+        Menu configMenu = new Menu(shell, SWT.DROP_DOWN);
+        configMenuItem.setMenu(configMenu);
         
-        // Sicherstellen, dass das Verzeichnis existiert
-        File configDir = configFile.getParentFile();
-        if (!configDir.exists()) {
-            configDir.mkdirs();
-        }
-        
-        // Konfigurationsdatei schreiben
-        try (BufferedWriter writer = new BufferedWriter(new FileWriter(configFile))) {
-            writer.write(searchPath);
-            logger.info("Suchpfad gespeichert: {}", searchPath);
-        } catch (IOException e) {
-            logger.error("Fehler beim Schreiben der Konfigurationsdatei: {}", e.getMessage());
-        }
-    }
-    
-    /**
-     * Erstellt das Konfigurationsmenü mit Textfeld für den Suchpfad und dem ReadConfigs-Button.
-     */
-    private void createConfigMenu() {
-        // Gruppe für die Konfigurationseinstellungen
-        Group configGroup = new Group(shell, SWT.NONE);
-        configGroup.setText("Konfiguration");
-        configGroup.setLayoutData(new GridData(SWT.FILL, SWT.TOP, true, false));
-        
-        GridLayout groupLayout = new GridLayout(3, false);
-        configGroup.setLayout(groupLayout);
-        
-        // Label für den Suchpfad
-        Label searchPathLabel = new Label(configGroup, SWT.NONE);
-        searchPathLabel.setText("Suchpfad:");
-        
-        // Textfeld für den Suchpfad
-        searchPathText = new Text(configGroup, SWT.BORDER);
-        searchPathText.setLayoutData(new GridData(SWT.FILL, SWT.CENTER, true, false));
-        
-        // Button zum Durchsuchen nach einem Verzeichnis
-        Button browseButton = new Button(configGroup, SWT.PUSH);
-        browseButton.setText("Browse...");
-        browseButton.addSelectionListener(new SelectionAdapter() {
+        // Menüpunkt "Suchpfad festlegen" erstellen
+        MenuItem setSearchPathItem = new MenuItem(configMenu, SWT.PUSH);
+        setSearchPathItem.setText("Suchpfad festlegen...");
+        setSearchPathItem.addSelectionListener(new SelectionAdapter() {
             @Override
             public void widgetSelected(SelectionEvent e) {
-                DirectoryDialog dialog = new DirectoryDialog(shell, SWT.OPEN);
-                dialog.setText("Suchverzeichnis auswählen");
-                dialog.setMessage("Wählen Sie das Verzeichnis, in dem nach Konfigurationsdateien gesucht werden soll");
-                
-                String selectedPath = dialog.open();
-                if (selectedPath != null) {
-                    searchPathText.setText(selectedPath);
-                    saveSearchPath(selectedPath);
+                openSearchPathDialog();
+            }
+        });
+        
+        // Menüpunkt "Suchmuster festlegen" erstellen
+        MenuItem setSearchPatternItem = new MenuItem(configMenu, SWT.PUSH);
+        setSearchPatternItem.setText("Suchmuster für Dateiinhalt festlegen...");
+        setSearchPatternItem.addSelectionListener(new SelectionAdapter() {
+            @Override
+            public void widgetSelected(SelectionEvent e) {
+                openSearchPatternDialog();
+            }
+        });
+        
+        // Trennlinie im Menü
+        new MenuItem(configMenu, SWT.SEPARATOR);
+    }
+    
+    /**
+     * Öffnet einen Dialog zum Festlegen des Suchpfads.
+     */
+    private void openSearchPathDialog() {
+        DirectoryDialog dialog = new DirectoryDialog(shell, SWT.OPEN);
+        dialog.setText("Suchverzeichnis auswählen");
+        dialog.setMessage("Wählen Sie das Verzeichnis, in dem nach Konfigurationsdateien gesucht werden soll");
+        
+        if (!searchPath.isEmpty()) {
+            dialog.setFilterPath(searchPath);
+        }
+        
+        String selectedPath = dialog.open();
+        if (selectedPath != null) {
+            searchPath = selectedPath;
+            saveConfig();
+        }
+    }
+    
+    /**
+     * Öffnet einen Dialog zum Festlegen der Suchmuster.
+     */
+    private void openSearchPatternDialog() {
+        // Ein einfaches Dialogfenster mit einem Textfeld erstellen
+        Shell dialogShell = new Shell(shell, SWT.DIALOG_TRIM | SWT.APPLICATION_MODAL);
+        dialogShell.setText("Suchmuster festlegen");
+        dialogShell.setSize(450, 200);
+        
+        GridLayout layout = new GridLayout(2, false);
+        layout.marginWidth = 10;
+        layout.marginHeight = 10;
+        dialogShell.setLayout(layout);
+        
+        Label label = new Label(dialogShell, SWT.NONE);
+        label.setText("Suchmuster (kommagetrennt, z.B. \"pattern1,pattern2\"):");
+        GridData labelData = new GridData();
+        labelData.horizontalSpan = 2;
+        label.setLayoutData(labelData);
+        
+        Text patternText = new Text(dialogShell, SWT.BORDER);
+        patternText.setText(searchPattern);
+        GridData textData = new GridData(SWT.FILL, SWT.CENTER, true, false);
+        textData.horizontalSpan = 2;
+        patternText.setLayoutData(textData);
+        
+        Label infoLabel = new Label(dialogShell, SWT.NONE);
+        infoLabel.setText("Es werden nur .chr Dateien angezeigt, deren Inhalt eines der\n" +
+                         "angegebenen Muster enthält.");
+        GridData infoData = new GridData();
+        infoData.horizontalSpan = 2;
+        infoData.verticalIndent = 10;
+        infoLabel.setLayoutData(infoData);
+        
+        Button okButton = new Button(dialogShell, SWT.PUSH);
+        okButton.setText("OK");
+        okButton.setLayoutData(new GridData(SWT.RIGHT, SWT.CENTER, true, false));
+        okButton.addSelectionListener(new SelectionAdapter() {
+            @Override
+            public void widgetSelected(SelectionEvent e) {
+                searchPattern = patternText.getText().trim();
+                if (searchPattern.isEmpty()) {
+                    searchPattern = "default"; // Standardwert, wenn nichts eingegeben wurde
                 }
+                saveConfig();
+                dialogShell.close();
             }
         });
         
-        // Button zum Durchsuchen nach Konfigurationsdateien
-        Button readConfigsButton = new Button(configGroup, SWT.PUSH);
-        readConfigsButton.setText("ReadConfigs");
-        GridData buttonData = new GridData(SWT.LEFT, SWT.CENTER, false, false);
-        buttonData.horizontalSpan = 3;
-        readConfigsButton.setLayoutData(buttonData);
-        
-        // Event-Handler für den ReadConfigs-Button
-        readConfigsButton.addSelectionListener(new SelectionAdapter() {
+        Button cancelButton = new Button(dialogShell, SWT.PUSH);
+        cancelButton.setText("Abbrechen");
+        cancelButton.setLayoutData(new GridData(SWT.LEFT, SWT.CENTER, false, false));
+        cancelButton.addSelectionListener(new SelectionAdapter() {
             @Override
             public void widgetSelected(SelectionEvent e) {
-                readConfigs();
+                dialogShell.close();
             }
         });
+        
+        dialogShell.open();
     }
     
     /**
@@ -243,16 +261,105 @@ public class MainWindow {
     }
     
     /**
+     * Erstellt den ReadConfigs-Button unter der Tabelle.
+     */
+    private void createReadConfigsButton() {
+        Button readConfigsButton = new Button(shell, SWT.PUSH);
+        readConfigsButton.setText("ReadConfigs");
+        readConfigsButton.setLayoutData(new GridData(SWT.CENTER, SWT.CENTER, true, false));
+        
+        // Event-Handler für den ReadConfigs-Button
+        readConfigsButton.addSelectionListener(new SelectionAdapter() {
+            @Override
+            public void widgetSelected(SelectionEvent e) {
+                readConfigs();
+            }
+        });
+    }
+    
+    /**
+     * Lädt die gespeicherte Konfiguration aus der Konfigurationsdatei.
+     */
+    private void loadSavedConfig() {
+        String configFilePath = ROOT_PATH + File.separator + CONFIG_DIR + File.separator + CONFIG_FILE;
+        File configFile = new File(configFilePath);
+        
+        // Prüfen, ob die Konfigurationsdatei existiert
+        if (!configFile.exists()) {
+            // Verzeichnis und leere Konfigurationsdatei erstellen, wenn sie nicht existieren
+            File configDir = new File(ROOT_PATH + File.separator + CONFIG_DIR);
+            if (!configDir.exists()) {
+                configDir.mkdirs();
+            }
+            try {
+                configFile.createNewFile();
+            } catch (IOException e) {
+                logger.error("Fehler beim Erstellen der Konfigurationsdatei: {}", e.getMessage());
+            }
+            return;
+        }
+        
+        // Konfigurationsdatei lesen
+        try (BufferedReader reader = new BufferedReader(new FileReader(configFile))) {
+            String line;
+            
+            // Erste Zeile: Suchpfad
+            if ((line = reader.readLine()) != null) {
+                searchPath = line.trim();
+                logger.info("Suchpfad geladen: {}", searchPath);
+            }
+            
+            // Zweite Zeile: Suchmuster
+            if ((line = reader.readLine()) != null) {
+                searchPattern = line.trim();
+                if (searchPattern.isEmpty()) {
+                    searchPattern = "default"; // Standardwert
+                }
+                logger.info("Suchmuster geladen: {}", searchPattern);
+            }
+        } catch (IOException e) {
+            logger.error("Fehler beim Lesen der Konfigurationsdatei: {}", e.getMessage());
+        }
+    }
+    
+    /**
+     * Speichert die Konfiguration in der Konfigurationsdatei.
+     */
+    private void saveConfig() {
+        String configFilePath = ROOT_PATH + File.separator + CONFIG_DIR + File.separator + CONFIG_FILE;
+        File configFile = new File(configFilePath);
+        
+        // Sicherstellen, dass das Verzeichnis existiert
+        File configDir = configFile.getParentFile();
+        if (!configDir.exists()) {
+            configDir.mkdirs();
+        }
+        
+        // Konfigurationsdatei schreiben
+        try (BufferedWriter writer = new BufferedWriter(new FileWriter(configFile))) {
+            // Suchpfad in erster Zeile
+            writer.write(searchPath);
+            writer.newLine();
+            
+            // Suchmuster in zweiter Zeile
+            writer.write(searchPattern);
+            
+            logger.info("Konfiguration gespeichert. Suchpfad: {}, Suchmuster: {}", searchPath, searchPattern);
+        } catch (IOException e) {
+            logger.error("Fehler beim Schreiben der Konfigurationsdatei: {}", e.getMessage());
+        }
+    }
+    
+    /**
      * Durchsucht das Suchverzeichnis nach Konfigurationsdateien und zeigt diese in der Tabelle an.
      */
     private void readConfigs() {
-        String searchPath = searchPathText.getText().trim();
-        logger.info("Suche Konfigurationsdateien im Pfad: {}", searchPath);
+        logger.info("Suche Konfigurationsdateien im Pfad: {} mit Muster: {}", searchPath, searchPattern);
         
         if (searchPath.isEmpty()) {
             MessageBox messageBox = new MessageBox(shell, SWT.ICON_ERROR);
             messageBox.setText("Fehler");
-            messageBox.setMessage("Bitte geben Sie einen gültigen Suchpfad an.");
+            messageBox.setMessage("Bitte legen Sie unter 'Konfiguration > Suchpfad festlegen' einen gültigen Suchpfad fest.");
             messageBox.open();
             return;
         }
@@ -266,14 +373,11 @@ public class MainWindow {
             return;
         }
         
-        // Suchpfad speichern
-        saveSearchPath(searchPath);
-        
         // Tabelle leeren
         configFilesTable.removeAll();
         
         // Konfigurationsdateien durchsuchen
-        List<ConfigFile> configFiles = configScanner.scanForConfigFiles(searchDir);
+        List<ConfigFile> configFiles = configScanner.scanForConfigFiles(searchDir, searchPattern);
         
         // Gefundene Dateien in der Tabelle anzeigen
         for (ConfigFile configFile : configFiles) {
